@@ -1,0 +1,135 @@
+from rest_framework import serializers
+from django.contrib.auth import authenticate
+from .models import CustomUser, UserAddress, UserWishlist
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for user profile"""
+    
+    full_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id', 'username', 'email', 'full_name', 'phone_number',
+            'profile_image', 'bio', 'gender', 'date_of_birth',
+            'is_verified', 'is_staff', 'is_superuser',
+            'preferred_currency', 'preferred_language',
+            'newsletter_subscribed', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'is_verified']
+    
+    def get_full_name(self, obj):
+        return obj.get_full_name()
+
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer for user registration"""
+    
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
+    
+    class Meta:
+        model = CustomUser
+        fields = ['email', 'username', 'first_name', 'last_name', 'phone_number', 'password', 'password2']
+    
+    def validate(self, data):
+        if data['password'] != data.pop('password2'):
+            raise serializers.ValidationError({'password': 'Passwords must match'})
+        return data
+    
+    def create(self, validated_data):
+        user = CustomUser.objects.create_user(**validated_data)
+        return user
+
+
+class UserLoginSerializer(serializers.Serializer):
+    """Serializer for user login"""
+    
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    
+    def validate(self, data):
+        # Authenticate using email instead of username
+        email = data.get('email', '').lower()
+        password = data.get('password', '')
+        
+        try:
+            user = CustomUser.objects.get(email__iexact=email)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError('Invalid credentials')
+        
+        # Check password
+        if not user.check_password(password):
+            raise serializers.ValidationError('Invalid credentials')
+        
+        if not user.is_active:
+            raise serializers.ValidationError('User account is disabled')
+        
+        data['user'] = user
+        return data
+
+
+class AdminSetupSerializer(serializers.ModelSerializer):
+    """Serializer for initial admin setup"""
+    
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
+    
+    class Meta:
+        model = CustomUser
+        fields = ['username', 'email', 'password', 'password2']
+    
+    def validate(self, data):
+        if data['password'] != data['password2']:
+            raise serializers.ValidationError({'password': 'Passwords must match'})
+        
+        # Check if username already exists
+        if CustomUser.objects.filter(username=data['username']).exists():
+            raise serializers.ValidationError({'username': 'Username already exists'})
+        
+        # Check if email already exists
+        if CustomUser.objects.filter(email=data['email']).exists():
+            raise serializers.ValidationError({'email': 'Email already exists'})
+        
+        return data
+    
+    def create(self, validated_data):
+        # Remove password2 before creating user
+        validated_data.pop('password2')
+        
+        user = CustomUser.objects.create_user(
+            **validated_data,
+            is_staff=True,
+            is_superuser=True,
+            is_active=True
+        )
+        return user
+
+
+class UserAddressSerializer(serializers.ModelSerializer):
+    """Serializer for user addresses"""
+    
+    class Meta:
+        model = UserAddress
+        fields = [
+            'id', 'address_type', 'first_name', 'last_name', 'phone_number',
+            'email', 'street_address', 'city', 'state_province', 'postal_code',
+            'country', 'is_default', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class UserWishlistSerializer(serializers.ModelSerializer):
+    """Serializer for user wishlist"""
+    
+    products = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserWishlist
+        fields = ['id', 'products', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_products(self, obj):
+        from products.serializers import ProductListSerializer
+        return ProductListSerializer(obj.products.all(), many=True).data

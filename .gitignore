@@ -1,0 +1,41 @@
+.env.local
+.env.example
+# ===== Django =====
+*.log
+db.sqlite3
+media/
+staticfiles/
+static/
+
+
+
+# ===== Django Secret Key backups =====
+*.key
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+
+# ===== OS files =====
+.DS_Store
+Thumbs.db
+
+# ===== Testing / coverage =====
+htmlcov/
+.coverage
+*.cover
+.pytest_cache/
+
+# ===== Celery / Redis / cache =====
+celerybeat-schedule
+celerybeat.pid
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Node (if frontend is inside backend project) =====
+node_modules/
+
+# ===== Supabase / local exports (if used) =====
+*.dump
+*.backup
