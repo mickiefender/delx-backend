@@ -34,8 +34,18 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         fields = ['email', 'username', 'first_name', 'last_name', 'phone_number', 'password', 'password2']
     
     def validate(self, data):
-        if data['password'] != data.pop('password2'):
+        password2 = data.pop('password2', None)
+        if password2 is None or data.get('password') != password2:
             raise serializers.ValidationError({'password': 'Passwords must match'})
+        
+        # Give clear, consistent errors for duplicates
+        username = data.get('username')
+        email = data.get('email')
+        if username and CustomUser.objects.filter(username=username).exists():
+            raise serializers.ValidationError({'username': 'A user with that username already exists.'})
+        if email and CustomUser.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({'email': 'A user with that email already exists.'})
+        
         return data
     
     def create(self, validated_data):
