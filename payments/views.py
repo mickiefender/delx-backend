@@ -27,20 +27,23 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        payment = serializer.save(user=request.user, status='pending')
+        # Create payment row (set user explicitly; serializer.create sets order/payment fields)
+        payment = serializer.create(serializer.validated_data)
+        payment.user = request.user
+        payment.status = 'pending'
+        payment.save()
 
-        # Call Paystack API
         paystack_key = getattr(settings, 'PAYSTACK_SECRET_KEY', '')
         if not paystack_key:
             return Response(
-                {'error': 'Paystack secret key is missing on the server'},
+                {'success': False, 'error': 'Paystack secret key is missing on the server'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
         headers = {'Authorization': f'Bearer {paystack_key}'}
 
         payload = {
-            'email': request.user.email,
+            'email': serializer.validated_data['email'],
             'amount': int(payment.amount * 100),  # Paystack uses cents
             'reference': str(payment.id),
         }
@@ -59,22 +62,34 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 payment.paystack_access_code = data['data']['access_code']
                 payment.save()
 
-                return Response({
-                    'payment': PaymentSerializer(payment).data,
-                    'authorization_url': data['data']['authorization_url'],
-                }, status=status.HTTP_200_OK)
+                # Match frontend contract
+                return Response(
+                    {
+                        'success': True,
+                        'data': {
+                            'authorizationUrl': data['data']['authorization_url'],
+                            'accessCode': data['data']['access_code'],
+                            'reference': data['data']['reference'],
+                        },
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
             return Response(
-                {'error': 'Failed to initialize payment', 'details': response.text},
-                status=status.HTTP_400_BAD_REQUEST
+                {'success': False, 'error': 'Failed to initialize payment', 'details': response.text},
+                status=status.HTTP_400_BAD_REQUEST,
             )
         except requests.exceptions.RequestException:
             return Response(
-                {'error': 'Unable to reach Paystack right now. Please try again in a few seconds.'},
-                status=status.HTTP_502_BAD_GATEWAY
+                {
+                    'success': False,
+                    'error': 'Unable to reach Paystack right now. Please try again in a few seconds.',
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
             )
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            logger.exception("Paystack initialize failed")
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'])
     def verify(self, request):

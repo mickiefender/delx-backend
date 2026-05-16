@@ -20,33 +20,56 @@ class PaymentSerializer(serializers.ModelSerializer):
         ]
 
 
-class PaymentInitializeSerializer(serializers.ModelSerializer):
-    """Serializer for initializing payments"""
+class PaymentInitializeSerializer(serializers.Serializer):
+    """
+    Serializer for initializing payments (matches frontend payload)
+
+    Frontend sends:
+    - email
+    - amount
+    - orderId
+    - phone
+    - paymentMethod: 'card'|'mobile_money'|'bank_transfer'
+    - mobileMoneyProvider?: 'mtn'|'telecel'|'airteltigo'
+    """
+    email = serializers.EmailField()
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    orderId = serializers.CharField(max_length=100)
+    phone = serializers.CharField(max_length=20, allow_blank=True, required=False)
+
+    paymentMethod = serializers.ChoiceField(choices=['card', 'mobile_money', 'bank_transfer'])
+    mobileMoneyProvider = serializers.ChoiceField(
+        choices=['mtn', 'telecel', 'airteltigo'],
+        required=False,
+        allow_null=True,
+    )
 
     currency = serializers.CharField(required=False)
 
-    class Meta:
-        model = Payment
-        fields = [
-            'order',
-            'amount',
-            'currency',
-            'payment_method',
-            'mobile_provider',
-            'card_last_four',
-            'card_brand',
-            'phone_number',
-        ]
-
     def validate_currency(self, value: str) -> str:
-        # Paystack expects standard ISO 4217 codes; normalize Ghana cedis variants to GHS.
         normalized = (value or '').upper().strip()
-
-        # Common client-side mistakes/variants
         if normalized in {'GHS', 'GHC', 'GH¢', 'GH-CEDIS', 'CEDIS'}:
             return 'GHS'
-
         raise serializers.ValidationError(f'Currency not supported: {normalized}')
+
+    def create(self, validated_data):
+        """
+        Create Payment instance. ViewSet will set user/status and call Paystack.
+        """
+        from orders.models import Order  # local import to avoid circulars
+
+        order = Order.objects.get(order_id=validated_data['orderId'])
+
+        payment = Payment(
+            order=order,
+            amount=validated_data['amount'],
+            currency=validated_data.get('currency') or 'GHS',
+            payment_method=validated_data['paymentMethod'],
+            mobile_provider=validated_data.get('mobileMoneyProvider'),
+            phone_number=validated_data.get('phone') or '',
+            status='pending',
+        )
+        return payment
 
 
 class RefundSerializer(serializers.ModelSerializer):
