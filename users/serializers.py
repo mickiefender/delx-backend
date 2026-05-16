@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.db import IntegrityError
 from .models import CustomUser, UserAddress, UserWishlist
 
 
@@ -49,8 +50,24 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return data
     
     def create(self, validated_data):
-        user = CustomUser.objects.create_user(**validated_data)
-        return user
+        try:
+            user = CustomUser.objects.create_user(**validated_data)
+            return user
+        except IntegrityError:
+            username = validated_data.get('username')
+            email = validated_data.get('email')
+
+            errors: dict[str, str] = {}
+
+            if username and CustomUser.objects.filter(username=username).exists():
+                errors['username'] = 'A user with that username already exists.'
+            if email and CustomUser.objects.filter(email__iexact=email).exists():
+                errors['email'] = 'A user with that email already exists.'
+
+            if not errors:
+                errors['non_field_errors'] = 'Registration failed due to a constraint violation.'
+
+            raise serializers.ValidationError(errors)
 
 
 class UserLoginSerializer(serializers.Serializer):
