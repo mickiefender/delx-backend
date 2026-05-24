@@ -231,6 +231,13 @@ class ProductViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
+    def featured(self, request):
+        """Get featured products"""
+        products = self.get_queryset().filter(is_featured=True)[:8]
+        serializer = ProductListSerializer(products, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
     def best_sellers(self, request):
         """Get best selling products"""
         products = self.get_queryset().order_by('-review_count')[:10]
@@ -251,6 +258,57 @@ class ProductViewSet(viewsets.ModelViewSet):
         
         products = self.get_queryset().filter(collection=collection)[:12]
         serializer = ProductListSerializer(products, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def related(self, request):
+        """Get products related to a specific product by its ID.
+        
+        Query params:
+        - product_id: ID of the product to find related products for
+        
+        Returns products from the same category first, then same brand.
+        """
+        product_id = request.query_params.get('product_id')
+        
+        if not product_id:
+            return Response(
+                {"detail": "product_id query parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            reference_product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {"detail": f"Product with ID {product_id} not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        related_products = []
+        seen_ids = {int(product_id)}  # Exclude the reference product
+        
+        # First: Get products from the same category
+        if reference_product.category:
+            category_products = self.get_queryset().filter(
+                category=reference_product.category
+            ).exclude(pk=product_id)[:6]
+            related_products.extend(list(category_products))
+            seen_ids.update(p.pk for p in category_products)
+        
+        # Then: Get products from the same brand (if available)
+        if reference_product.brand:
+            brand_products = self.get_queryset().filter(
+                brand=reference_product.brand
+            ).exclude(pk=product_id)[:4]
+            for product in brand_products:
+                if product.pk not in seen_ids:
+                    related_products.append(product)
+                    seen_ids.add(product.pk)
+        
+        # Limit to 4 products and serialize
+        related_products = related_products[:4]
+        serializer = ProductListSerializer(related_products, many=True)
         return Response(serializer.data)
 
 

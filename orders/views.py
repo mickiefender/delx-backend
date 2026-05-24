@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
 import logging
 
@@ -28,11 +28,16 @@ class OrderViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'total_amount']
     ordering = ['-created_at']
 
+    def get_permissions(self):
+        if self.action == 'destroy':
+            return [IsAdminUser()]
+        return super().get_permissions()
+
     def get_queryset(self):
         """
         - staff/admin: all orders
         - authenticated customer: only their orders
-        - guest: only orders matching ?guest_id=...
+        - guest: orders matching ?guest_id=... OR ?order_id=... OR ?paystack_reference=...
         """
         request = self.request
 
@@ -41,6 +46,15 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if request.user and request.user.is_authenticated:
             return Order.objects.filter(user=request.user)
+
+        # Allow guest lookups by order_id or paystack_reference (for success page verification)
+        guest_order_id = request.query_params.get('order_id')
+        if guest_order_id:
+            return Order.objects.filter(order_id=guest_order_id)
+
+        guest_paystack_ref = request.query_params.get('paystack_reference')
+        if guest_paystack_ref:
+            return Order.objects.filter(paystack_reference=guest_paystack_ref)
 
         guest_id = request.query_params.get('guest_id')
         if guest_id:
@@ -103,7 +117,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not new_status:
             return Response({'error': 'status is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        valid_statuses = {choice[0] for choice in order.STATUS_CHOICES}
+        valid_statuses = {choice[0] for choice in Order.STATUS_CHOICES}
         if new_status not in valid_statuses:
             return Response(
                 {'error': f'Invalid status: {new_status}', 'valid_statuses': sorted(valid_statuses)},
@@ -121,7 +135,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             location=location,
         )
 
-# Email customer with tracking update (sync with fallback; fail gracefully)
+        # Email customer with tracking update (sync with fallback; fail gracefully)
         if order.shipping_email:
             try:
                 from emailing.tasks import send_tracking_update_customer_task
@@ -167,6 +181,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         """
         Confirm an order using its public `order_id`.
         Used by the Paystack webhook.
+        
+        IMPORTANT: Only confirms orders that are in 'awaiting_payment' status.
+        This prevents double-confirmation and ensures orders are only confirmed
+        AFTER payment has been verified.
         """
         order_id = request.data.get('order_id')
         if not order_id:
@@ -176,6 +194,14 @@ class OrderViewSet(viewsets.ModelViewSet):
             order = Order.objects.get(order_id=order_id)
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only confirm orders that are awaiting payment
+        # This prevents the order from being confirmed before payment is verified
+        if order.status != 'awaiting_payment':
+            return Response(
+                {'message': f'Order already in status: {order.status}', 'order_id': order.order_id},
+                status=status.HTTP_200_OK
+            )
 
         # Update status
         order.status = 'confirmed'
@@ -188,7 +214,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             message='Payment confirmed via Paystack webhook',
         )
 
-# Emails: customer + admin (sync with fallback)
+        # Emails: customer + admin (sync with fallback)
         if order.shipping_email:
             try:
                 from emailing.tasks import (

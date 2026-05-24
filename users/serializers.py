@@ -157,6 +157,64 @@ class UserWishlistSerializer(serializers.ModelSerializer):
         fields = ['id', 'products', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
-    def get_products(self, obj):
+def get_products(self, obj):
         from products.serializers import ProductListSerializer
         return ProductListSerializer(obj.products.all(), many=True).data
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    """Serializer for forgot password request"""
+    
+    email = serializers.EmailField()
+    
+    def validate_email(self, value):
+        # Always normalize to lowercase for lookup
+        return value.lower()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    """Serializer for password reset"""
+    
+    token = serializers.CharField(min_length=64, max_length=128)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
+    
+    def validate(self, data):
+        password = data.get('password')
+        password2 = data.get('password2')
+        
+        if password != password2:
+            raise serializers.ValidationError({'password': 'Passwords must match'})
+        
+        # Validate token exists and is valid
+        from .models import PasswordResetToken
+        token = data.get('token')
+        
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+        except PasswordResetToken.DoesNotExist:
+            raise serializers.ValidationError({'token': 'Invalid or expired token'})
+        
+        if not reset_token.is_valid():
+            raise serializers.ValidationError({'token': 'Invalid or expired token'})
+        
+        data['reset_token'] = reset_token
+        return data
+    
+    def save(self):
+        """Reset the user's password"""
+        reset_token = self.validated_data['reset_token']
+        new_password = self.validated_data['password']
+        
+        user = reset_token.user
+        user.set_password(new_password)
+        user.save()
+        
+        # Mark token as used
+        reset_token.used = True
+        reset_token.save()
+        
+        # Optionally invalidate all other tokens for this user
+        PasswordResetToken.objects.filter(user=user, used=False).update(used=True)
+        
+        return user

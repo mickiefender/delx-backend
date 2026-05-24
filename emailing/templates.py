@@ -134,3 +134,42 @@ def abandoned_cart_reminder_email(order_email: str, username: str, total_value: 
     """.strip()
     text = f"Hi {name}! You left items in your cart worth {total_value}."
     return EmailPayload(subject=subject, html=html, text=text)
+
+
+def password_reset_email(user_email: str, username: str, reset_url: str) -> EmailPayload:
+    name = username or user_email
+    subject = "Reset your Delchris password"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+      <h2>Hi {_esc(name)}!</h2>
+      <p>We received a request to reset your password.</p>
+      <p>Click the button below to create a new password:</p>
+      <p style="margin: 20px 0;">
+        <a href="{_esc(reset_url)}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+          Reset Password
+        </a>
+      </p>
+      <p>Or copy and paste this link in your browser:</p>
+      <p style="word-break: break-all; font-size: 12px; color: #666;">{_esc(reset_url)}</p>
+      <hr />
+      <p style="color:#555;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+    </div>
+    """.strip()
+    text = f"Hi {name}! Reset your Delchris password using this link: {reset_url}"
+    return EmailPayload(subject=subject, html=html, text=text)
+
+
+def password_reset_confirmation_email(user_email: str, username: str) -> EmailPayload:
+    name = username or user_email
+    subject = "Your Delchris password has been reset"
+    html = f"""
+    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+      <h2>Hi {_esc(name)}!</h2>
+      <p>Your password has been successfully reset.</p>
+      <p>If you didn't do this, please contact us immediately.</p>
+      <hr />
+      <p style="color:#555;">Delchris Ecommerce</p>
+    </div>
+    """.strip()
+    text = f"Hi {name}! Your password has been successfully reset."
+    return EmailPayload(subject=subject, html=html, text=text)

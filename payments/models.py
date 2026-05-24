@@ -25,7 +25,7 @@ class Payment(models.Model):
         ('airteltigo', 'AirtelTigo Money'),
     )
     
-    order = models.OneToOneField('orders.Order', on_delete=models.CASCADE, related_name='payment')
+    order = models.OneToOneField('orders.Order', on_delete=models.CASCADE, related_name='payment', null=True, blank=True)
     user = models.ForeignKey('users.CustomUser', on_delete=models.SET_NULL, null=True, related_name='payments')
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, default='GHS')

@@ -23,7 +23,7 @@ from products.views import (
     SiteSettingsViewSet,
 )
 from orders.views import OrderViewSet
-from payments.views import PaymentViewSet, RefundViewSet
+from payments.views import PaymentViewSet, RefundViewSet, paystack_webhook
 from reviews.views import ReviewViewSet
 
 # Import analytics views
@@ -75,8 +75,17 @@ urlpatterns = [
     path('api/v1/analytics/track/click/', track_click),
     path('api/v1/analytics/dashboard/performance-summary/', performance_summary),
     path('api/v1/analytics/dashboard/performance-breakdown/', performance_breakdown),
+    
     # API Documentation (using OpenAPI schema view)
     path('api/schema/', get_schema_view(title='Delchris API')),
+    
+    # Paystack Webhook
+    path('api/v1/payments/webhook/', paystack_webhook, name='paystack-webhook'),
+    
+    # Payment explicit action routes (ensure they work properly with DRF)
+    # These are explicit routes to the PaymentViewSet actions
+    path('api/v1/payments/initialize/', PaymentViewSet.as_view({'post': 'initialize'}), name='payment-initialize'),
+    path('api/v1/payments/verify/', PaymentViewSet.as_view({'post': 'verify'}), name='payment-verify'),
 ]
 
 # Serve media files in development

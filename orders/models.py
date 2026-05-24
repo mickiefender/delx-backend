@@ -7,6 +7,7 @@ class Order(models.Model):
     """Order model"""
     
     STATUS_CHOICES = (
+        ('awaiting_payment', 'Awaiting Payment'),
         ('pending', 'Pending'),
         ('confirmed', 'Confirmed'),
         ('processing', 'Processing'),
@@ -19,7 +20,7 @@ class Order(models.Model):
     order_id = models.CharField(max_length=100, unique=True, default=uuid.uuid4)
     user = models.ForeignKey('users.CustomUser', on_delete=models.SET_NULL, null=True, related_name='orders')
     guest_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='awaiting_payment')
     
     # Shipping Info
     shipping_first_name = models.CharField(max_length=100)
@@ -49,6 +50,9 @@ class Order(models.Model):
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     coupon_code = models.CharField(max_length=50, blank=True, null=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    
+# Paystack Reference (matches Paystack payment reference for lookup)
+    paystack_reference = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     
     # Additional Info
     notes = models.TextField(blank=True, null=True)

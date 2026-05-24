@@ -1,5 +1,8 @@
+import logging
 from rest_framework import serializers
 from .models import Order, OrderItem, OrderTracking
+
+logger = logging.getLogger(__name__)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -18,8 +21,9 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'subtotal',
             'variant_attributes',
         ]
-        # Only subtotal is derived in OrderCreateSerializer; name/image come from payload.
-        read_only_fields = ['id', 'subtotal']
+        # Only id is read-only; subtotal can be passed from frontend for validation.
+        # The create method will re-compute subtotal from price * quantity for data integrity.
+        read_only_fields = ['id']
 
 
 class OrderTrackingSerializer(serializers.ModelSerializer):
@@ -40,7 +44,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'order_id', 'status', 'total_amount', 'items_count',
-            'created_at', 'updated_at'
+            'paystack_reference', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
     
@@ -65,7 +69,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'billing_country', 'subtotal', 'shipping_cost', 'tax_amount',
             'discount_amount', 'coupon_code', 'total_amount', 'notes',
             'tracking_number', 'estimated_delivery', 'items', 'tracking_history',
-            'created_at', 'updated_at'
+            'paystack_reference', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
 
@@ -74,19 +78,24 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating orders"""
     
     items = OrderItemSerializer(many=True, required=True)
+    
+    # Explicitly define order_id as a CharField to handle custom order IDs from frontend
+    order_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
     # Accept money fields from client (optional). If missing, we compute what we can.
-    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    shipping_cost = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    tax_amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    discount_amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    # Use FloatField internally then convert to Decimal for safety with JavaScript numbers
+    subtotal = serializers.FloatField(required=False)
+    shipping_cost = serializers.FloatField(required=False)
+    tax_amount = serializers.FloatField(required=False)
+    discount_amount = serializers.FloatField(required=False)
+    total_amount = serializers.FloatField(required=False)
 
     class Meta:
         model = Order
         fields = [
             # allow client/Paystack to use the same reference as created order
             'order_id',
+            'paystack_reference',
             'guest_id',
             # Shipping
             'shipping_first_name', 'shipping_last_name', 'shipping_email',
@@ -102,31 +111,148 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             'items', 'notes',
         ]
 
+    def validate_order_id(self, value):
+        """Validate and normalize order_id - ensure it's a valid string or generate a new UUID-based one"""
+        import uuid
+        if not value or str(value).strip() == '':
+            # Generate new UUID-based order_id if not provided
+            return f"ORD-{uuid.uuid4().hex[:12].upper()}"
+        # Ensure it doesn't exceed max_length=100
+        value = str(value).strip()[:100]
+        return value
+
+    def validate(self, data):
+        """Validate data before creating - catch constraint issues early"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log validation start for debugging
+        logger.info(f"OrderCreateSerializer.validate - data keys: {list(data.keys())}")
+        
+        # Validate order_id length
+        order_id = data.get('order_id')
+        if order_id and len(order_id) > 100:
+            raise serializers.ValidationError({'order_id': 'Order ID cannot exceed 100 characters'})
+        
+        # Validate paystack_reference length if provided
+        paystack_ref = data.get('paystack_reference')
+        if paystack_ref and len(str(paystack_ref)) > 255:
+            raise serializers.ValidationError({'paystack_reference': 'Reference cannot exceed 255 characters'})
+        
+        # Validate items
+        items = data.get('items')
+        if not items:
+            raise serializers.ValidationError({'items': 'At least one item is required'})
+        
+        # Validate each item's decimal fields for precision
+        for idx, item in enumerate(items):
+            price = item.get('price')
+            subtotal = item.get('subtotal')
+            
+            # Check for None values
+            if price is None:
+                raise serializers.ValidationError({'items': f'Item {idx}: price is required'})
+            if subtotal is None:
+                raise serializers.ValidationError({'items': f'Item {idx}: subtotal is required'})
+            
+            # Validate price precision (max 10 digits, 2 decimal places)
+            try:
+                price_val = float(price)
+                if price_val > 99999999.99:  # max_digits=10, decimal_places=2
+                    raise serializers.ValidationError({'items': f'Item {idx}: price value exceeds maximum allowed (99999999.99)'})
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'items': f'Item {idx}: invalid price value'})
+        
+        # Validate money fields for precision
+        for field_name in ['subtotal', 'shipping_cost', 'tax_amount', 'discount_amount', 'total_amount']:
+            value = data.get(field_name)
+            if value is not None:
+                try:
+                    float_val = float(value)
+                    if float_val > 99999999.99:  # max_digits=10, decimal_places=2
+                        raise serializers.ValidationError({field_name: f'{field_name} value exceeds maximum allowed (99999999.99)'})
+                except (TypeError, ValueError):
+                    pass  # Let the FloatField handle validation
+        
+        logger.info(f"OrderCreateSerializer.validate - passed")
+        return super().validate(data)
+
     def create(self, validated_data):
+        from decimal import Decimal, ROUND_HALF_UP
+        import logging
+        import uuid
+        logger = logging.getLogger(__name__)
+        
         items_data = validated_data.pop('items')
+        
+        # Handle order_id: if provided by client, use it; otherwise generate new one
+        order_id_value = validated_data.pop('order_id', None)
+        if not order_id_value or str(order_id_value).strip() == '':
+            order_id_value = f"ORD-{uuid.uuid4().hex[:12].upper()}"
+        
+        # Log incoming data for debugging
+        logger.info(f"OrderCreateSerializer.create - validated_data keys: {validated_data.keys()}")
+        logger.info(f"OrderCreateSerializer.create - order_id set to: {order_id_value}")
+        logger.info(f"OrderCreateSerializer.create - items_data count: {len(items_data) if items_data else 0}")
+
+        # Safely convert float to Decimal for database - properly quantize to 2 decimal places
+        def to_decimal(value, default=0):
+            if value is None:
+                return Decimal(str(default))
+            try:
+                # Convert to float then to string to handle JavaScript floating point issues
+                float_val = float(value)
+                # Round to 2 decimal places and convert to Decimal
+                decimal_val = Decimal(str(round(float_val, 2)))
+                # Quantize to 2 decimal places to ensure proper decimal_places constraint
+                return decimal_val.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            except (TypeError, ValueError) as e:
+                logger.error(f"Error converting value to Decimal: {value}, error: {e}")
+                return Decimal(str(default))
+
+        # Safely get quantity as integer
+        def to_int(value, default=1):
+            if value is None:
+                return default
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return default
 
         # Compute subtotal from items (authoritative)
         computed_subtotal = sum(
-            (item.get('price') or 0) * (item.get('quantity') or 1)
+            to_decimal(item.get('price'), 0) * to_int(item.get('quantity'), 1)
             for item in items_data
         )
+        
+        logger.info(f"OrderCreateSerializer.create - computed_subtotal: {computed_subtotal}")
 
-        shipping_cost = validated_data.get('shipping_cost') or 0
-        tax_amount = validated_data.get('tax_amount') or 0
-        discount_amount = validated_data.get('discount_amount') or 0
+        shipping_cost = to_decimal(validated_data.get('shipping_cost'), 0)
+        tax_amount = to_decimal(validated_data.get('tax_amount'), 0)
+        discount_amount = to_decimal(validated_data.get('discount_amount'), 0)
+        
+        logger.info(f"OrderCreateSerializer.create - shipping_cost: {shipping_cost}, tax_amount: {tax_amount}, discount_amount: {discount_amount}")
 
-        subtotal = validated_data.get('subtotal') or computed_subtotal
-        # Prefer computed_subtotal if provided subtotal is inconsistent/missing
-        if subtotal != computed_subtotal:
+        # Use provided subtotal or fall back to computed
+        subtotal = validated_data.get('subtotal')
+        if subtotal is not None:
+            subtotal = to_decimal(subtotal)
+        else:
             subtotal = computed_subtotal
 
+        # Use provided total_amount or compute from components
         total_amount = validated_data.get('total_amount')
-        if total_amount is None:
+        if total_amount is not None:
+            total_amount = to_decimal(total_amount)
+        else:
             total_amount = subtotal + shipping_cost + tax_amount - discount_amount
+
+        logger.info(f"OrderCreateSerializer.create - final subtotal: {subtotal}, total_amount: {total_amount}")
 
         order = Order.objects.create(
             **{
                 **validated_data,
+                'order_id': order_id_value,
                 'subtotal': subtotal,
                 'shipping_cost': shipping_cost,
                 'tax_amount': tax_amount,
@@ -140,8 +266,10 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         from products.models import Product
 
         for item in items_data:
-            price = item.get('price') or 0
-            quantity = item.get('quantity') or 1
+            price = to_decimal(item.get('price'), 0)
+            quantity = to_int(item.get('quantity'), 1)
+            
+            logger.info(f"OrderCreateSerializer.create - item: price={price}, quantity={quantity}")
 
             product = None
             product_id = item.get('product')

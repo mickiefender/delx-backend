@@ -18,6 +18,8 @@ from .templates import (
     order_success_customer_email,
     signup_email,
     tracking_update_customer_email,
+    password_reset_email,
+    password_reset_confirmation_email,
 )
 
 logger = get_task_logger(__name__)
@@ -362,11 +364,78 @@ def send_abandoned_cart_reminders_batch(self) -> int:
                 f"Failed to send abandoned cart email to {user.email}: {e}. "
                 "Will retry later.",
                 exc_info=e,
-            )
+)
             failed += 1
             # Don't mark as sent on failure - will retry next run
+    
+            logger.info(
+                f"Abandoned cart reminder batch complete: sent={sent}, failed={failed}"
+            )
+            return sent
 
-    logger.info(
-        f"Abandoned cart reminder batch complete: sent={sent}, failed={failed}"
-    )
-    return sent
+
+@shared_task(
+    bind=True,
+    base=BaseEmailTask,
+    autoretry_for=(ResendError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    name="emailing.send_password_reset_email",
+)
+def send_password_reset_email_task(
+    self, *, user_email: str, username: str, reset_url: str
+) -> Optional[dict]:
+    """Send password reset email to user."""
+    if not user_email:
+        return {"status": "skipped", "reason": "no email"}
+    
+    try:
+        payload = password_reset_email(
+            user_email=user_email,
+            username=username,
+            reset_url=reset_url,
+        )
+        send_email(payload, to_email=user_email)
+        logger.info(f"Sent password reset email to {user_email}")
+        return {"status": "sent", "email": user_email}
+    except (ResendError, ConnectionError, TimeoutError) as e:
+        logger.warning(
+            f"Failed to send password reset email to {user_email}: {e}. Retrying...",
+            exc_info=e,
+        )
+        raise self.retry(exc=e)
+
+
+@shared_task(
+    bind=True,
+    base=BaseEmailTask,
+    autoretry_for=(ResendError, ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+    max_retries=3,
+    name="emailing.send_password_reset_confirmation_email",
+)
+def send_password_reset_confirmation_email_task(
+    self, *, user_email: str, username: str
+) -> Optional[dict]:
+    """Send password reset confirmation email to user."""
+    if not user_email:
+        return {"status": "skipped", "reason": "no email"}
+    
+    try:
+        payload = password_reset_confirmation_email(
+            user_email=user_email,
+            username=username,
+        )
+        send_email(payload, to_email=user_email)
+        logger.info(f"Sent password reset confirmation email to {user_email}")
+        return {"status": "sent", "email": user_email}
+    except (ResendError, ConnectionError, TimeoutError) as e:
+        logger.warning(
+            f"Failed to send password reset confirmation to {user_email}: {e}. Retrying...",
+            exc_info=e,
+        )
+        raise self.retry(exc=e)

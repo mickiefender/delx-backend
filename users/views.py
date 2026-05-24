@@ -10,6 +10,7 @@ from .serializers import (
     UserSerializer, UserRegistrationSerializer, UserLoginSerializer,
     UserAddressSerializer, UserWishlistSerializer,
     AdminSetupSerializer,
+    ForgotPasswordSerializer, ResetPasswordSerializer,
 )
 
 from emailing.service import send_email
@@ -181,7 +182,7 @@ class UserViewSet(viewsets.ModelViewSet):
         token, created = Token.objects.get_or_create(user=user)
         return Response({
             'user': UserSerializer(user).data,
-            'token': token.key
+'token': token.key
         }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get', 'put'])
@@ -202,6 +203,73 @@ class UserViewSet(viewsets.ModelViewSet):
         """Logout user"""
         request.user.auth_token.delete()
         return Response({'message': 'Logged out successfully'}, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny()])
+    def forgot_password(self, request):
+        """Request password reset - sends email with reset link"""
+        from django.conf import settings
+        
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data['email']
+        
+        # Find user by email (case-insensitive)
+        user = CustomUser.objects.filter(email__iexact=email).first()
+        
+        # Always return success to prevent email enumeration
+        # But only send email if user exists
+        if user and user.is_active:
+            # Create password reset token
+            from .models import PasswordResetToken
+            reset_token = PasswordResetToken.create_token(user)
+            
+            # Build reset URL
+            frontend_base = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+            reset_url = f"{frontend_base}/auth/reset-password?token={reset_token.token}"
+            
+            # Send password reset email (async, best-effort)
+            if user.email:
+                try:
+                    from emailing.tasks import send_password_reset_email_task
+                    
+                    send_password_reset_email_task.delay(
+                        user_email=user.email,
+                        username=user.username,
+                        reset_url=reset_url,
+                    )
+                except Exception:
+                    pass
+        
+        return Response({
+            'message': 'If an account exists with that email, a password reset link has been sent.'
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny()])
+    def reset_password(self, request):
+        """Reset password using token"""
+        serializer = ResetPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        user = serializer.save()
+        
+        # Send confirmation email (async, best-effort)
+        if user.email:
+            try:
+                from emailing.tasks import send_password_reset_confirmation_email_task
+                
+                send_password_reset_confirmation_email_task.delay(
+                    user_email=user.email,
+                    username=user.username,
+                )
+            except Exception:
+                pass
+        
+        return Response({
+            'message': 'Password has been reset successfully. Please login with your new password.'
+        }, status=status.HTTP_200_OK)
 
 
 class UserAddressViewSet(viewsets.ModelViewSet):

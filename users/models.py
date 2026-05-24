@@ -1,6 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+from django.conf import settings
+import secrets
+import hashlib
 
 from core.supabase_storage import SupabaseStorage
 
@@ -38,6 +42,71 @@ class CustomUser(AbstractUser):
     
     def __str__(self):
         return f"{self.get_full_name()} ({self.email})"
+
+
+class PasswordResetToken(models.Model):
+    """Token for password reset functionality"""
+    
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='password_reset_tokens'
+    )
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+    used_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Password Reset Token'
+        verbose_name_plural = 'Password Reset Tokens'
+    
+    def __str__(self):
+        return f"Password reset for {self.user.email}"
+    
+    @classmethod
+    def create_token(cls, user):
+        """Create a new password reset token for a user"""
+        # Generate a secure random token
+        token = secrets.token_urlsafe(32)
+        
+        # Create hash for storage (so token can't be recovered from DB)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        
+        # Get expiration from settings or default to 24 hours
+        from django.conf import settings
+        token_lifetime = getattr(settings, 'PASSWORD_RESET_TOKEN_LIFETIME', 24)  # hours
+        
+        expires_at = timezone.now() + timezone.timedelta(hours=token_lifetime)
+        
+        # Delete any existing unused tokens for this user
+        cls.objects.filter(user=user, used=False).delete()
+        
+        # Create new token
+        reset_token = cls.objects.create(
+            user=user,
+            token=token,
+            token_hash=token_hash,
+            expires_at=expires_at
+        )
+        
+        return reset_token
+    
+    def is_valid(self):
+        """Check if token is valid (not used and not expired)"""
+        return (
+            not self.used and
+            timezone.now() < self.expires_at
+        )
+    
+    def mark_used(self):
+        """Mark token as used"""
+        self.used = True
+        self.used_at = timezone.now()
+        self.save(update_fields=['used', 'used_at'])
 
 
 class UserAddress(models.Model):
