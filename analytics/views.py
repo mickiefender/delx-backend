@@ -193,6 +193,34 @@ def dashboard_sales_overview(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def dashboard_notification_counts(request):
+    """
+    Returns counts for admin dashboard notifications:
+    - new_orders_count: count of orders with status 'pending' or 'processing'
+    - recent_analytics_count: total clicks + page views in the last 24 hours
+    """
+    # Count new orders (pending or processing)
+    new_orders_count = Order.objects.filter(
+        status__in=['pending', 'processing']
+    ).count()
+
+    # Count recent analytics activity (last 24 hours)
+    last_24h = timezone.now() - timezone.timedelta(hours=24)
+    recent_clicks = ClickEvent.objects.filter(timestamp__gte=last_24h).count()
+    recent_views = PageView.objects.filter(timestamp__gte=last_24h).count()
+    recent_analytics_count = recent_clicks + recent_views
+
+    return Response(
+        {
+            "new_orders_count": new_orders_count,
+            "recent_analytics_count": recent_analytics_count,
+        },
+        status=HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def dashboard_sales_daily(request):
     """
     Returns daily sales overview for the last 14 days (global, not user-scoped):

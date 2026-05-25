@@ -32,6 +32,7 @@ from analytics.views import (
     dashboard_recent_orders,
     dashboard_sales_overview,
     dashboard_sales_daily,
+    dashboard_notification_counts,
     track_page_view,
     track_click,
     performance_summary,
@@ -69,6 +70,7 @@ urlpatterns = [
     path('api/v1/analytics/dashboard/sales-overview/', dashboard_sales_overview),
     path('api/v1/analytics/dashboard/sales-daily/', dashboard_sales_daily),
     path('api/v1/analytics/dashboard/recent-orders/', dashboard_recent_orders),
+    path('api/v1/analytics/dashboard/notification-counts/', dashboard_notification_counts),
 
     # Analytics (performance / tracking)
     path('api/v1/analytics/track/page-view/', track_page_view),

@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils.text import slugify
 from .models import Category, Brand, Product, ProductImage, ProductVariant, ProductAttribute, HeroBanner, HomeAdBanner, SiteSettings
 
 
@@ -9,6 +10,13 @@ class CategorySerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name', 'slug', 'description', 'image', 'is_active', 'is_featured', 'created_at']
         read_only_fields = ['id', 'slug', 'created_at']
+    
+    def create(self, validated_data):
+        # Generate slug from name if not provided
+        name = validated_data.get('name', '')
+        if name and not validated_data.get('slug'):
+            validated_data['slug'] = slugify(name)
+        return super().create(validated_data)
 
 
 class BrandSerializer(serializers.ModelSerializer):

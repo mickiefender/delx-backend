@@ -32,6 +32,27 @@ class BrandViewSet(viewsets.ModelViewSet):
             return [IsAdminUser()]
         return [AllowAny()]
 
+    def get_object(self):
+        """
+        Allow lookup by both numeric id and slug.
+        Frontend currently calls /brands/{id}/ for DELETE/PATCH.
+        """
+        queryset = self.get_queryset()
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs.get(lookup_url_kwarg)
+
+        if not lookup_value:
+            return super().get_object()
+
+        # Try numeric PK first
+        try:
+            return queryset.get(pk=int(lookup_value))
+        except (ValueError, Brand.DoesNotExist):
+            pass
+
+        # Fallback to slug
+        return queryset.get(slug=lookup_value)
+
     def get_queryset(self):
         if self.request.user and self.request.user.is_staff:
             return Brand.objects.all()

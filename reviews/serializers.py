@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from products.models import Product
 from .models import Review, ReviewImage, ReviewResponse
 
 
@@ -61,21 +62,12 @@ class ReviewDetailSerializer(serializers.ModelSerializer):
 class ReviewCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating reviews"""
     
-    images = serializers.ListField(
-        child=serializers.ImageField(),
-        required=False,
-        allow_empty=True
-    )
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
     
     class Meta:
         model = Review
-        fields = ['product', 'title', 'content', 'rating', 'images']
+        fields = ['product', 'title', 'content', 'rating']
     
     def create(self, validated_data):
-        images_data = validated_data.pop('images', [])
         review = Review.objects.create(**validated_data)
-        
-        for image in images_data:
-            ReviewImage.objects.create(review=review, image=image)
-        
         return review
