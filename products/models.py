@@ -301,13 +301,13 @@ class SiteSettings(models.Model):
     twitter_url = models.URLField(blank=True, default='')
     whatsapp_number = models.CharField(max_length=50, blank=True, default='')
     
-    # Shipping Settings
+# Shipping Settings
     free_shipping_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=500)
     shipping_flat_rate = models.DecimalField(max_digits=10, decimal_places=2, default=15)
     local_shipping_rate = models.DecimalField(max_digits=10, decimal_places=2, default=10)
     
-    # Tax Settings (e.g. 0.15 = 15%)
-    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.15)
+    # Tax Settings (e.g. 0 = 0%, 0.15 = 15%)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     
     # Return Policy
     return_policy_days = models.IntegerField(default=7)
