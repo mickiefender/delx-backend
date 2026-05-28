@@ -28,7 +28,7 @@ def signup_email(user_email: str, username: str) -> EmailPayload:
       <p>Thanks for signing up with Delchris Ecommerce.</p>
       <p>You can now log in and start shopping.</p>
       <hr />
-      <p style="color:#555;">If you didn’t create this account, ignore this email.</p>
+      <p style="color:#555;">If you didn't create this account, ignore this email.</p>
     </div>
     """.strip()
     text = f"Welcome, {name}! Thanks for signing up with Delchris Ecommerce."
@@ -42,7 +42,7 @@ def login_email(user_email: str, username: str) -> EmailPayload:
     <div style="font-family: Arial, sans-serif; line-height: 1.5;">
       <h2>Hi {_esc(name)}!</h2>
       <p>You successfully logged in.</p>
-      <p>If this wasn’t you, please secure your account.</p>
+      <p>If this wasn't you, please secure your account.</p>
       <hr />
       <p style="color:#555;">Delchris Ecommerce</p>
     </div>
@@ -172,4 +172,54 @@ def password_reset_confirmation_email(user_email: str, username: str) -> EmailPa
     </div>
     """.strip()
     text = f"Hi {name}! Your password has been successfully reset."
+    return EmailPayload(subject=subject, html=html, text=text)
+
+
+def low_stock_warning_admin_email(
+    order_id: str,
+    low_stock_products: list,
+) -> EmailPayload:
+    """
+    Email template for admin low stock warning.
+    Sent when a product's stock falls to 10 or below after a purchase.
+    """
+    subject = f"[LOW STOCK ALERT] Action required for {len(low_stock_products)} product(s)"
+    
+    products_html = ""
+    for product in low_stock_products:
+        products_html += f"""
+        <tr style="border-bottom: 1px solid #ddd;">
+          <td style="padding: 8px; border-bottom: 1px solid #ddd;">{_esc(product['name'])}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd;">{_esc(product['sku'])}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; color: #dc2626; font-weight: bold;">{product['current_stock']}</td>
+        </tr>
+        """
+    
+    html = f"""
+    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+      <h2 style="color: #dc2626;">⚠️ Low Stock Alert</h2>
+      <p>The following product(s) have low stock (10 or below) after order <strong>{_esc(order_id)}</strong>:</p>
+      
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <thead>
+          <tr style="background-color: #f3f4f6;">
+            <th style="padding: 8px; text-align: left;">Product Name</th>
+            <th style="padding: 8px; text-align: left;">SKU</th>
+            <th style="padding: 8px; text-align: left;">Current Stock</th>
+          </tr>
+        </thead>
+        <tbody>
+          {products_html}
+        </tbody>
+      </table>
+      
+      <p><strong>Please restock these items ASAP to avoid stockouts.</strong></p>
+      <hr />
+      <p style="color:#555;">Delchris Ecommerce - Stock Management</p>
+    </div>
+    """.strip()
+    
+    product_names = ", ".join([p['name'] for p in low_stock_products])
+    text = f"Low Stock Alert: {len(low_stock_products)} product(s) need restocking after order {order_id}: {product_names}"
+    
     return EmailPayload(subject=subject, html=html, text=text)

@@ -20,6 +20,7 @@ from .templates import (
     tracking_update_customer_email,
     password_reset_email,
     password_reset_confirmation_email,
+    low_stock_warning_admin_email,
 )
 
 logger = get_task_logger(__name__)
@@ -439,3 +440,56 @@ def send_password_reset_confirmation_email_task(
             exc_info=e,
         )
         raise self.retry(exc=e)
+
+
+def send_low_stock_warning_admin_task(
+    *,
+    order_id: str,
+    low_stock_products: list,
+) -> Optional[dict]:
+    """
+    Send low stock warning email to admin.
+    
+    Called when product stock falls to 10 or below after a purchase.
+    Uses synchronous execution with fallback to ensure emails send
+    even when Celery broker is unavailable.
+    """
+    if not low_stock_products:
+        logger.warning(f"No low stock products to report for order {order_id}")
+        return {"status": "skipped", "reason": "no low stock products"}
+    
+    try:
+        payload = low_stock_warning_admin_email(
+            order_id=order_id,
+            low_stock_products=low_stock_products,
+        )
+        
+        # Try async first (Celery), fall back to sync if that fails
+        try:
+            send_email_to_admin(payload)
+        except Exception as async_error:
+            logger.warning(
+                f"Celery/async failed for low stock warning (order {order_id}): {async_error}. "
+                "Falling back to synchronous send."
+            )
+            # Synchronous fallback - send directly
+            from .resend_client import send_resend_email
+            from .service import _get_admin_emails
+            
+            admin_emails = _get_admin_emails()
+            if admin_emails:
+                send_resend_email(
+                    to_emails=admin_emails,
+                    subject=payload.subject,
+                    html=payload.html,
+                    text=payload.text,
+                )
+        
+        logger.info(f"Sent low stock warning for order {order_id}: {len(low_stock_products)} products")
+        return {"status": "sent", "order_id": order_id, "products_count": len(low_stock_products)}
+    except Exception as e:
+        logger.error(
+            f"Failed to send low stock warning for order {order_id}: {e}",
+            exc_info=e,
+        )
+        return {"status": "failed", "error": str(e)}

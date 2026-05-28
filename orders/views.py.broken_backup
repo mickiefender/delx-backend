@@ -92,7 +92,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-
+"""Cancel an order"""
         order = self.get_object()
         if order.status in ['pending', 'confirmed']:
             order.status = 'cancelled'
