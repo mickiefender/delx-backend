@@ -35,6 +35,18 @@ class ReviewViewSet(viewsets.ModelViewSet):
         """Create review with current user"""
         serializer.save(user=self.request.user)
     
+    @action(detail=False, methods=['get'])
+    def featured(self, request):
+        """Get featured reviews for homepage display - top rated reviews"""
+        # Get top reviews ordered by rating (desc) and helpful_count (desc)
+        reviews = Review.objects.filter(
+            is_approved=True,
+            rating__gte=4  # Only include 4-5 star reviews
+        ).select_related('user', 'product').order_by('-rating', '-helpful_count')[:6]
+        
+        serializer = ReviewListSerializer(reviews, many=True)
+        return Response(serializer.data)
+    
     @action(detail=True, methods=['post'])
     def mark_helpful(self, request, pk=None):
         """Mark review as helpful"""

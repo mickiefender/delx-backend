@@ -67,6 +67,16 @@ class OrderViewSet(viewsets.ModelViewSet):
             return OrderDetailSerializer
         elif self.action == 'create':
             return OrderCreateSerializer
+        elif self.action == 'list':
+            # If the client is doing a "lookup" by public order_id/paystack_reference/guest_id,
+            # return the full detail serializer so the frontend can render items + tracking history.
+            # Keep the list serializer for normal authenticated "my orders" browsing.
+            if (
+                self.request.query_params.get('order_id')
+                or self.request.query_params.get('paystack_reference')
+                or self.request.query_params.get('guest_id')
+            ):
+                return OrderDetailSerializer
         return OrderListSerializer
 
     def perform_create(self, serializer):
@@ -135,6 +145,31 @@ class OrderViewSet(viewsets.ModelViewSet):
             location=location,
         )
 
+        # Send push notification to the authenticated customer (if possible)
+        try:
+            if order.user_id:
+                from users.models import DeviceToken
+                from core.fcm_utils import send_fcm_to_tokens
+
+                registration_tokens = list(
+                    DeviceToken.objects.filter(user_id=order.user_id).values_list("token", flat=True)
+                )
+
+                if registration_tokens:
+                    send_fcm_to_tokens(
+                        registration_tokens=registration_tokens,
+                        title="Order update",
+                        body=message or f"Your order status changed to {new_status}.",
+                        data={
+                            "type": "order",
+                            "route": f"/orders/{order.order_id}/tracking",
+                            "order_id": str(order.order_id),
+                            "status": new_status,
+                        },
+                    )
+        except Exception as e:
+            logger.error(f"Failed to send FCM notification for order {order.order_id}: {e}")
+
         # Email customer with tracking update (sync with fallback; fail gracefully)
         if order.shipping_email:
             try:
@@ -196,9 +231,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         except Order.DoesNotExist:
             return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Only confirm orders that are awaiting payment
-        # This prevents the order from being confirmed before payment is verified
-        if order.status != 'awaiting_payment':
+        # Only confirm orders that are in a pre-confirmation state.
+        # Some flows may create orders as 'pending' instead of 'awaiting_payment'.
+        if order.status not in ['awaiting_payment', 'pending']:
             return Response(
                 {'message': f'Order already in status: {order.status}', 'order_id': order.order_id},
                 status=status.HTTP_200_OK,

@@ -5,16 +5,18 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 
-from .models import CustomUser, UserAddress, UserWishlist
+from .models import CustomUser, UserAddress, UserWishlist, DeviceToken
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, UserLoginSerializer,
     UserAddressSerializer, UserWishlistSerializer,
     AdminSetupSerializer,
     ForgotPasswordSerializer, ResetPasswordSerializer,
+    DeviceTokenSerializer,
 )
 
 from emailing.service import send_email
 from emailing.templates import signup_email, login_email
+from django.utils import timezone
 
 
 class AdminSetupViewSet(viewsets.ViewSet):
@@ -270,6 +272,55 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({
             'message': 'Password has been reset successfully. Please login with your new password.'
         }, status=status.HTTP_200_OK)
+
+    @action(
+        detail=False,
+        methods=['post'],
+        permission_classes=[IsAuthenticated],
+        url_path='device-token',
+    )
+    def register_device_token(self, request):
+        """
+        Register or update an FCM device token for the authenticated user.
+
+        Body:
+          { "platform": "android" | "ios", "token": "<fcm_token>" }
+        """
+        serializer = DeviceTokenSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        platform = serializer.validated_data['platform']
+        token = serializer.validated_data['token']
+
+        try:
+            device_token = DeviceToken.objects.filter(token=token).first()
+            if device_token:
+                device_token.user = request.user
+                device_token.platform = platform
+                device_token.last_seen_at = timezone.now()
+                device_token.save(update_fields=['user', 'platform', 'last_seen_at'])
+            else:
+                device_token = DeviceToken.objects.create(
+                    user=request.user,
+                    platform=platform,
+                    token=token,
+                    last_seen_at=timezone.now(),
+                )
+
+            return Response(
+                {
+                    'message': 'Device token registered',
+                    'platform': device_token.platform,
+                    'token': device_token.token,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to register device token: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class UserAddressViewSet(viewsets.ModelViewSet):

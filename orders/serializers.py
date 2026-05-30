@@ -272,9 +272,14 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             logger.info(f"OrderCreateSerializer.create - item: price={price}, quantity={quantity}")
 
             product = None
-            product_id = item.get('product')
-            if product_id:
-                product = Product.objects.filter(id=product_id).first()
+            product_value = item.get('product')
+
+            # DRF may pass either a raw PK or an actual Product instance
+            if product_value:
+                if isinstance(product_value, Product):
+                    product = product_value
+                else:
+                    product = Product.objects.filter(id=product_value).first()
 
             product_name = item.get('product_name')
             product_image = item.get('product_image')

@@ -39,3 +39,9 @@ node_modules/
 # ===== Supabase / local exports (if used) =====
 *.dump
 *.backup
+
+__pycache__/
+*.pyc
+
+# Firebase
+firebase_service_account.json

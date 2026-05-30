@@ -109,7 +109,7 @@ DATABASES = {
         'PASSWORD': config('SUPABASE_DB_PASSWORD', default=''),
         'HOST': config('SUPABASE_DB_HOST', default='localhost'),
         'PORT': config('SUPABASE_DB_PORT', default='5432'),
-        'CONN_MAX_AGE': 600,
+        'CONN_MAX_AGE': 60,
         'OPTIONS': {
             'sslmode': 'require',
             'connect_timeout': 10,

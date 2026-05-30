@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.db import IntegrityError
-from .models import CustomUser, UserAddress, UserWishlist
+from .models import CustomUser, UserAddress, UserWishlist, DeviceToken
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -160,6 +160,22 @@ class UserWishlistSerializer(serializers.ModelSerializer):
 def get_products(self, obj):
         from products.serializers import ProductListSerializer
         return ProductListSerializer(obj.products.all(), many=True).data
+
+
+class DeviceTokenSerializer(serializers.Serializer):
+    """
+    Serializer for registering/updating an FCM device token.
+    Body:
+      { "platform": "android" | "ios", "token": "<fcm_token>" }
+    """
+    platform = serializers.ChoiceField(choices=["android", "ios"])
+    token = serializers.CharField()
+
+    def validate_token(self, value: str) -> str:
+        v = value.strip()
+        if not v:
+            raise serializers.ValidationError("token is required")
+        return v
 
 
 class ForgotPasswordSerializer(serializers.Serializer):

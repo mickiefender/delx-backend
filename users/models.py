@@ -154,3 +154,36 @@ class UserWishlist(models.Model):
     
     def __str__(self):
         return f"{self.user.username}'s Wishlist"
+
+
+class DeviceToken(models.Model):
+    """
+    Stores a user's push notification device token (FCM).
+    Used for sending order/shipping updates.
+    """
+
+    PLATFORM_ANDROID = 'android'
+    PLATFORM_IOS = 'ios'
+    PLATFORM_CHOICES = (
+        (PLATFORM_ANDROID, 'Android'),
+        (PLATFORM_IOS, 'iOS'),
+    )
+
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='device_tokens')
+    platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES)
+    token = models.TextField(unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Device Token'
+        verbose_name_plural = 'Device Tokens'
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['platform']),
+        ]
+
+    def __str__(self):
+        return f"DeviceToken(user_id={self.user_id}, platform={self.platform})"

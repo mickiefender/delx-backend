@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('analytics', '0001_initial'),
-        ('users', '__latest__'),
+        ('users', '0002_alter_customuser_profile_image'),
     ]
 
     operations = [

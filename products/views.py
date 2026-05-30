@@ -20,6 +20,8 @@ from .serializers import (
     SiteSettingsPublicSerializer,
 )
 
+from core.no_count_pagination import NoCountPageNumberPagination
+
 
 class BrandViewSet(viewsets.ModelViewSet):
     """Public viewset for product brands"""

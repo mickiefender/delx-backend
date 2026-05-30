@@ -59,16 +59,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
         # Guests without paystack_reference get empty queryset
         return Payment.objects.none()
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def initialize(self, request):
         """Initialize payment with Paystack"""
         serializer = PaymentInitializeSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create payment row (set user explicitly; serializer.create sets order/payment fields)
+        # Create payment row (set order/payment fields via serializer)
         payment = serializer.create(serializer.validated_data)
-        payment.user = request.user
+        # For guests, keep user as null (Payment.user is nullable)
+        if request.user and request.user.is_authenticated:
+            payment.user = request.user
         payment.status = 'pending'
         payment.save()
 
@@ -228,8 +230,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     payment.response_data = data['data']
                     payment.save()
 
-                    # Update order with paystack_reference and change status from awaiting_payment to confirmed
-                    if payment.order.status == 'awaiting_payment':
+                    # Update order with paystack_reference and change status from pre-confirmation to confirmed
+                    if payment.order.status in ['awaiting_payment', 'pending']:
                         # Set the paystack_reference on the order so it can be looked up on success page
                         payment.order.paystack_reference = payment.paystack_reference
                         payment.order.status = 'confirmed'
@@ -385,9 +387,9 @@ def paystack_webhook(request):
             
             payment.save()
             
-            # Update order with paystack_reference and change status from awaiting_payment to confirmed
+            # Update order with paystack_reference and change status from pre-confirmation to confirmed
             order = payment.order
-            if order.status == 'awaiting_payment':
+            if order.status in ['awaiting_payment', 'pending']:
                 # Set the paystack_reference on the order so it can be looked up on success page
                 order.paystack_reference = payment.paystack_reference
                 order.status = 'confirmed'
