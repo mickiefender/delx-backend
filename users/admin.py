@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, UserAddress, UserWishlist
+from .models import CustomUser, UserAddress, UserWishlist, Notification
 
 
 @admin.register(CustomUser)
@@ -31,3 +31,15 @@ class UserWishlistAdmin(admin.ModelAdmin):
     def product_count(self, obj):
         return obj.products.count()
     product_count.short_description = 'Products'
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ('id', 'get_user', 'title', 'type', 'is_read', 'created_at')
+    list_filter = ('type', 'is_read', 'created_at')
+    search_fields = ('user__username', 'title', 'message')
+    list_select_related = ('user',)
+    
+    def get_user(self, obj):
+        return obj.user.username
+    get_user.short_description = 'User'

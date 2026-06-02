@@ -185,5 +185,9 @@ class DeviceToken(models.Model):
             models.Index(fields=['platform']),
         ]
 
-    def __str__(self):
+def __str__(self):
         return f"DeviceToken(user_id={self.user_id}, platform={self.platform})"
+
+
+# Import Notification model from notifications.py
+from .notifications import Notification

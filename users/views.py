@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 
-from .models import CustomUser, UserAddress, UserWishlist, DeviceToken
+from .models import CustomUser, UserAddress, UserWishlist, DeviceToken, Notification
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, UserLoginSerializer,
     UserAddressSerializer, UserWishlistSerializer,
@@ -13,6 +13,7 @@ from .serializers import (
     ForgotPasswordSerializer, ResetPasswordSerializer,
     DeviceTokenSerializer,
 )
+from .serializers_notifications import NotificationSerializer
 
 from emailing.service import send_email
 from emailing.templates import signup_email, login_email
@@ -371,3 +372,45 @@ class UserWishlistViewSet(viewsets.ModelViewSet):
             return Response({'message': 'Product removed from wishlist'})
         except UserWishlist.DoesNotExist:
             return Response({'error': 'Wishlist not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for user notifications.
+    Provides CRUD operations for notifications.
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """Return notifications for the authenticated user"""
+        return Notification.objects.filter(user=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        """List all notifications for the user"""
+        queryset = self.get_queryset()
+
+        # Optionally filter by read status
+        is_read = request.query_params.get('is_read')
+        if is_read is not None:
+            queryset = queryset.filter(is_read=is_read.lower() == 'true')
+
+        # Optionally filter by type
+        notification_type = request.query_params.get('type')
+        if notification_type:
+            queryset = queryset.filter(type=notification_type)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({'results': serializer.data})
+
+    def partial_update(self, request, *args, **kwargs):
+        """Update a single notification (mark as read)"""
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
+
+    @action(detail=False, methods=['patch'])
+    def mark_all_read(self, request):
+        """Mark all notifications as read"""
+        notifications = self.get_queryset()
+        notifications.update(is_read=True)
+        return Response({'message': 'All notifications marked as read'})

@@ -12,7 +12,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 from rest_framework.schemas import get_schema_view
 
 # Import all viewsets
-from users.views import UserViewSet, UserAddressViewSet, UserWishlistViewSet, AdminSetupViewSet
+from users.views import UserViewSet, UserAddressViewSet, UserWishlistViewSet, AdminSetupViewSet, NotificationViewSet
 from products.views import (
     CategoryViewSet,
     BrandViewSet,
@@ -44,6 +44,7 @@ router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='user')
 router.register(r'users/(?P<user_id>\d+)/addresses', UserAddressViewSet, basename='user-address')
 router.register(r'users/(?P<user_id>\d+)/wishlist', UserWishlistViewSet, basename='user-wishlist')
+router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'brands', BrandViewSet, basename='brand')
 router.register(r'hero-banners', HeroBannerViewSet, basename='hero-banner')

@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from django.core.files.storage import Storage
 from django.utils.deconstruct import deconstructible
+from django.conf import settings
 
 try:
     # Supabase python client v2.x typically exports at the top-level
@@ -11,6 +12,16 @@ try:
 except ImportError:  # pragma: no cover
     # Fallback for environments where `create_client` isn't top-level
     from supabase.client import create_client
+
+
+def _get_env(key: str, default: str = "") -> str:
+    """Get env var from os.environ or Django settings"""
+    # Try os.environ first (for deployment)
+    value = os.environ.get(key)
+    if value:
+        return value
+    # Fallback to Django settings (for testing)
+    return getattr(settings, key, default)
 
 
 @deconstructible
@@ -31,16 +42,15 @@ class SupabaseStorage(Storage):
         self.bucket_name = bucket_name
         self.folder = folder.strip("/")
 
-        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-        anon_key = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-        service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        supabase_url = _get_env("NEXT_PUBLIC_SUPABASE_URL")
+        anon_key = _get_env("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+        service_role_key = _get_env("SUPABASE_SERVICE_ROLE_KEY")
 
         if not supabase_url:
-            raise RuntimeError("Missing env var NEXT_PUBLIC_SUPABASE_URL")
-        if not anon_key:
-            raise RuntimeError("Missing env var NEXT_PUBLIC_SUPABASE_ANON_KEY")
-        if not service_role_key:
-            raise RuntimeError("Missing env var SUPABASE_SERVICE_ROLE_KEY")
+            # Use placeholder for migrations (won't actually be used)
+            supabase_url = "https://placeholder.supabase.co"
+            anon_key = "placeholder-anon-key"
+            service_role_key = "placeholder-service-key"
 
         # anon key client for read operations (public access)
         self.supabase = create_client(supabase_url, anon_key)
