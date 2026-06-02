@@ -36,20 +36,45 @@ class OrderTrackingSerializer(serializers.ModelSerializer):
 
 
 class OrderListSerializer(serializers.ModelSerializer):
-    """Serializer for order list"""
+    """Serializer for order list - includes items for display"""
     
+    items = OrderItemSerializer(many=True, read_only=True)
     items_count = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
     
     class Meta:
         model = Order
         fields = [
-            'id', 'order_id', 'status', 'total_amount', 'items_count',
+            'id', 'order_id', 'status', 'subtotal', 'shipping_cost',
+            'discount_amount', 'total_amount', 'items_count', 'items',
+            'shipping_first_name', 'shipping_last_name', 'shipping_address',
+            'shipping_city', 'shipping_state', 'tracking_number',
+            'payment_method', 'payment_status',
             'paystack_reference', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
     
     def get_items_count(self, obj):
         return obj.items.count()
+    
+    def get_payment_method(self, obj):
+        """Get payment method from related Payment model"""
+        try:
+            if hasattr(obj, 'payment') and obj.payment:
+                return obj.payment.payment_method
+        except Exception:
+            pass
+        return None
+    
+    def get_payment_status(self, obj):
+        """Get payment status from related Payment model"""
+        try:
+            if hasattr(obj, 'payment') and obj.payment:
+                return obj.payment.status
+        except Exception:
+            pass
+        return None
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):
@@ -57,6 +82,8 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     
     items = OrderItemSerializer(many=True, read_only=True)
     tracking_history = OrderTrackingSerializer(many=True, read_only=True)
+    payment_method = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
     
     class Meta:
         model = Order
@@ -69,9 +96,28 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'billing_country', 'subtotal', 'shipping_cost', 'tax_amount',
             'discount_amount', 'coupon_code', 'total_amount', 'notes',
             'tracking_number', 'estimated_delivery', 'items', 'tracking_history',
+            'payment_method', 'payment_status',
             'paystack_reference', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
+    
+    def get_payment_method(self, obj):
+        """Get payment method from related Payment model"""
+        try:
+            if hasattr(obj, 'payment') and obj.payment:
+                return obj.payment.payment_method
+        except Exception:
+            pass
+        return None
+    
+    def get_payment_status(self, obj):
+        """Get payment status from related Payment model"""
+        try:
+            if hasattr(obj, 'payment') and obj.payment:
+                return obj.payment.status
+        except Exception:
+            pass
+        return None
 
 
 class OrderCreateSerializer(serializers.ModelSerializer):
@@ -89,6 +135,18 @@ class OrderCreateSerializer(serializers.ModelSerializer):
     tax_amount = serializers.FloatField(required=False)
     discount_amount = serializers.FloatField(required=False)
     total_amount = serializers.FloatField(required=False)
+
+    # Shipping fields - allow_blank=True to handle empty strings from frontend
+    # The model requires these fields but the frontend may send empty strings
+    shipping_first_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_email = serializers.EmailField(required=False, allow_blank=True)
+    shipping_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    shipping_address = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    shipping_city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_state = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    shipping_country = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
     class Meta:
         model = Order
@@ -261,25 +319,37 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             }
         )
 
-        # Ensure product_name/product_image are always available for order items
+# Ensure product_name/product_image are always available for order items
         # (admin UI depends on these being present).
         from products.models import Product
 
         for item in items_data:
             price = to_decimal(item.get('price'), 0)
             quantity = to_int(item.get('quantity'), 1)
-            
+
             logger.info(f"OrderCreateSerializer.create - item: price={price}, quantity={quantity}")
 
             product = None
             product_value = item.get('product')
 
-            # DRF may pass either a raw PK or an actual Product instance
+            # DRF may pass either a raw PK (int/str), a dictionary with 'id', or an actual Product instance
             if product_value:
                 if isinstance(product_value, Product):
+                    # Already a Product instance - use it directly
                     product = product_value
+                elif isinstance(product_value, dict):
+                    # It's a nested representation - extract the ID
+                    product_id = product_value.get('id')
+                    if product_id:
+                        product = Product.objects.filter(id=product_id).first()
                 else:
-                    product = Product.objects.filter(id=product_value).first()
+                    # It's a PK (int or str) - query by ID
+                    try:
+                        product_id = int(product_value)
+                        product = Product.objects.filter(id=product_id).first()
+                    except (TypeError, ValueError):
+                        # If conversion fails, try to get by ID anyway
+                        product = Product.objects.filter(id=product_value).first()
 
             product_name = item.get('product_name')
             product_image = item.get('product_image')

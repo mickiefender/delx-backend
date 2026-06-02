@@ -22,16 +22,16 @@ class Order(models.Model):
     guest_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='awaiting_payment')
     
-    # Shipping Info
-    shipping_first_name = models.CharField(max_length=100)
-    shipping_last_name = models.CharField(max_length=100)
-    shipping_email = models.EmailField()
-    shipping_phone = models.CharField(max_length=20)
-    shipping_address = models.CharField(max_length=255)
-    shipping_city = models.CharField(max_length=100)
-    shipping_state = models.CharField(max_length=100)
-    shipping_postal_code = models.CharField(max_length=20)
-    shipping_country = models.CharField(max_length=100)
+# Shipping Info
+    shipping_first_name = models.CharField(max_length=100, blank=True)
+    shipping_last_name = models.CharField(max_length=100, blank=True)
+    shipping_email = models.EmailField(blank=True)
+    shipping_phone = models.CharField(max_length=20, blank=True)
+    shipping_address = models.CharField(max_length=255, blank=True)
+    shipping_city = models.CharField(max_length=100, blank=True)
+    shipping_state = models.CharField(max_length=100, blank=True)
+    shipping_postal_code = models.CharField(max_length=20, blank=True)
+    shipping_country = models.CharField(max_length=100, blank=True)
     
     # Billing Info
     billing_same_as_shipping = models.BooleanField(default=True)
