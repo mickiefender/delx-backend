@@ -44,6 +44,15 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ['id', 'image', 'alt_text', 'is_primary', 'order']
         read_only_fields = ['id']
 
+    def to_representation(self, instance):
+        """Convert to representation with absolute URLs for images"""
+        ret = super().to_representation(instance)
+        if instance.image:
+            ret['image'] = instance.image.url
+        else:
+            ret['image'] = None
+        return ret
+
 
 class ProductVariantSerializer(serializers.ModelSerializer):
     """Serializer for product variants"""
@@ -69,6 +78,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     brand_name = serializers.CharField(source='brand.name', read_only=True)
     brand = serializers.IntegerField(source='brand.id', allow_null=True, required=False)
+    images = ProductImageSerializer(many=True, read_only=True)
     discount_percentage = serializers.SerializerMethodField()
     
     class Meta:
@@ -84,6 +94,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             'price',
             'original_price',
             'image',
+            'images',
             'rating',
             'review_count',
             'discount_percentage',
