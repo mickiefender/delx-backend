@@ -201,11 +201,35 @@ class UserViewSet(viewsets.ModelViewSet):
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=False, methods=['post'])
+@action(detail=False, methods=['post'])
     def logout(self, request):
         """Logout user"""
         request.user.auth_token.delete()
         return Response({'message': 'Logged out successfully'}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='delete-account')
+    def delete_account(self, request):
+        """
+        Delete the authenticated user's account.
+        
+        This permanently deletes the user account and all associated data.
+        """
+        user = request.user
+        
+        # Delete user's auth token first
+        if hasattr(user, 'auth_token'):
+            user.auth_token.delete()
+        
+        # Store email for response before deleting
+        user_email = user.email
+        
+        # Delete the user account
+        user.delete()
+        
+        return Response({
+            'message': 'Account deleted successfully',
+            'email': user_email
+        }, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['post'], permission_classes=[AllowAny()])
     def forgot_password(self, request):
